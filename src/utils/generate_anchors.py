@@ -99,7 +99,8 @@ def generate_pyramid_anchors(image_shape):
     anchor_stride =config.RPN_ANCHOR_STRIDE
     assert len(scales)==len(feature_shapes),"every pyramid has a salce,so scales are equal to srides"
     for i in range(len(scales)):
-        print(scales[i])
+        if config.debug:
+            print('pyramid scale:',scales[i])
         anchors.append(generate_anchors(scales[i], ratios, feature_shapes[i],
                                         feature_strides[i], anchor_stride))
     return np.concatenate(anchors, axis=0)

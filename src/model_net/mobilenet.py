@@ -225,6 +225,7 @@ class DepthwiseConv2D(KL.Conv2D):
             self.depthwise_constraint)
         return config
 
+
 def ConvBlock(kernels_size,filter_nums,data_in,**kargs):
     conv_stride = kargs.get('conv_stride',(1,1))
     w_initial = kargs.get('w_initial','glorot_uniform')
@@ -232,11 +233,12 @@ def ConvBlock(kernels_size,filter_nums,data_in,**kargs):
     momtum = kargs.get('momtum',0.9)
     eps = kargs.get('eps',1e-5)
     na = int(kargs.get('cb_name',1))
+    train_bn = kargs.get('train_bn',True)
     conv_out = KL.Conv2D(filter_nums,kernels_size,strides=conv_stride,padding='same',use_bias=False,\
-                kernel_initializer=w_initial,kernel_regularizer=w_decay,name='conv_%d' % na)(data_in)
-    bn_out = KL.BatchNormalization(momentum=momtum,epsilon=eps,name='bn_%d' % na)(conv_out)
+                kernel_initializer=w_initial,kernel_regularizer=w_decay,name='res0_conv_%d' % na)(data_in)
+    bn_out = KL.BatchNormalization(momentum=momtum,epsilon=eps,name='res0_bn_%d' % na)(conv_out,training=train_bn)
     #out = keras.activations.relu(bn_out,max_value=6)
-    out = KL.Activation('relu',name='relu_%d' % na)(bn_out)
+    out = KL.Activation('relu',name='res0_relu_%d' % na)(bn_out)
     return out
 
 def Conv1x1(filter_nums,data_in,**kargs):
@@ -246,9 +248,10 @@ def Conv1x1(filter_nums,data_in,**kargs):
     momtum = kargs.get('momtum',0.9)
     eps = kargs.get('eps',1e-5)
     na = kargs.get('conv_name',"res1_1b_conv1a")
+    train_bn = kargs.get('train_bn',True)
     conv_out = KL.Conv2D(filter_nums,(1,1),strides=(1,1),use_bias=False,\
                 kernel_initializer=w_initial,kernel_regularizer=w_decay,name='%s_conv' % na)(data_in)
-    bn_out = KL.BatchNormalization(momentum=momtum,epsilon=eps,name='%s_bn' % na)(conv_out)
+    bn_out = KL.BatchNormalization(momentum=momtum,epsilon=eps,name='%s_bn' % na)(conv_out,training=train_bn)
     if not is_linear:
         #out = keras.activations.relu(bn_out,max_value=6)
         #out = KL.ReLU(max_value=6,name='%s_relu' % na)(bn_out)
@@ -264,9 +267,10 @@ def Dconv(data_in,**kargs):
     momtum = kargs.get('momtum',0.9)
     eps = kargs.get('eps',1e-5)
     na = kargs.get('bot_name',"res1_1b")
+    train_bn = kargs.get('train_bn',True)
     dconv_out = DepthwiseConv2D((3,3),strides=(s,s),padding='same',use_bias=False,depth_multiplier=1,\
                 depthwise_initializer=w_initial,depthwise_regularizer=w_decay,name='%s_dconv' % na)(data_in)
-    bn_out = KL.BatchNormalization(momentum=momtum,epsilon=eps,name='%s_dconv_bn' % na)(dconv_out)
+    bn_out = KL.BatchNormalization(momentum=momtum,epsilon=eps,name='%s_dconv_bn' % na)(dconv_out,training=train_bn)
     #out = keras.activations.relu(bn_out,max_value=6)
     #out = KL.ReLU(max_value=6,name='%s_dconv_relu' % na)(bn_out)
     out = KL.Activation('relu',name='%s_dconv_relu' % na)(bn_out)
@@ -307,7 +311,7 @@ def Inverted_residual_seq(t,chal_in,c,s,n,data_in,**kargs):
             out = Inverted_residual_block(t,chal_in,c,1,out,inv_block_name=name_child,**kargs)
     return out
 
-def MobileNetV2(input_data,train_bn=True,**kargs):
+def MobileNetV2(input_data,**kargs):
     width_mult = kargs.get('width_mult',1.0)
     class_num = kargs.get('class_num',81)
     cn = [int(x*width_mult) for x in [32,16,24,32,64,96,160,320,1280]]
@@ -333,12 +337,14 @@ def vis_net(model):
     plot_model(model,show_shapes=True,show_layer_names=True,to_file='model_mobile.png')
 
 def get_symbol(input_data,architecture,**kargs):
-    train_bn = kargs.get('train_bn',True)
+    #train_bn = kargs.get('train_bn',True)
     assert architecture in ["resnet50", "resnet101","mobilenet"]
-    return MobileNetV2(input_data,train_bn=train_bn,**kargs)
+    return MobileNetV2(input_data,**kargs)
 
 if __name__ == '__main__':
     a = K.ones(shape=(1,640,640,3))
-    net = get_symbol([640,640,3],'mobilenet')
+    in_d = KL.Input(tensor=a)
+    net = get_symbol(in_d,'mobilenet')
+    net_m = Model(input=in_d,output=net)
     #net = test()
-    vis_net(net)
+    vis_net(net_m)

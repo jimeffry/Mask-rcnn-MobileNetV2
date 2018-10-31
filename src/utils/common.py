@@ -14,6 +14,9 @@ import scipy
 import scipy.ndimage
 import warnings
 import tensorflow as tf
+import sys 
+sys.path.append('../')
+from mrcnn.mask_rcnn_config import Config as config 
 
 def resize_image(image, min_dim=None, max_dim=None, min_scale=None, mode="square"):
     """Resizes an image keeping the aspect ratio unchanged.
@@ -119,6 +122,12 @@ def resize_image(image, min_dim=None, max_dim=None, min_scale=None, mode="square
         raise Exception("Mode {} not supported".format(mode))
     return image.astype(image_dtype), window, scale, padding, crop
 
+def mold_image(images):
+    """Expects an RGB image (or array of images) and subtracts
+    the mean pixel and converts it to float. Expects image
+    colors in RGB order.
+    """
+    return images.astype(np.float32) - config.MEAN_PIXEL
 
 def resize_mask(mask, scale, padding, crop=None):
     """Resizes a mask using the given scale and padding.
@@ -134,13 +143,13 @@ def resize_mask(mask, scale, padding, crop=None):
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         mask = scipy.ndimage.zoom(mask, zoom=[scale, scale, 1], order=0)
-        print("mask ",np.shape(mask))
+        if config.debug:
+            print("resize mask ",np.shape(mask))
     if crop is not None:
         y, x, h, w = crop
         mask = mask[y:y + h, x:x + w]
     else:
         mask = np.pad(mask, padding, mode='constant', constant_values=0)
-    print(np.shape(mask))
     return mask
 
 
@@ -153,7 +162,7 @@ def minimize_mask(bbox, mask, mini_shape):
     mini_mask = np.zeros(mini_shape + (mask.shape[-1],), dtype=bool)
     for i in range(mask.shape[-1]):
         # Pick slice and cast to bool in case load_mask() returned wrong dtype
-        m = mask[:, :, i].astype(bool)
+        m = mask[:, :, i].astype(np.uint8)
         y1, x1, y2, x2 = bbox[i][:4]
         m = m[y1:y2, x1:x2]
         if m.size == 0:
@@ -293,6 +302,31 @@ def box_refinement(box, gt_box):
 
     return np.stack([dy, dx, dh, dw], axis=1)
 
+def box_refinement_graph(box, gt_box):
+    """Compute refinement needed to transform box to gt_box.
+    box and gt_box are [N, (y1, x1, y2, x2)]
+    """
+    box = tf.cast(box, tf.float32)
+    gt_box = tf.cast(gt_box, tf.float32)
+
+    height = box[:, 2] - box[:, 0]
+    width = box[:, 3] - box[:, 1]
+    center_y = box[:, 0] + 0.5 * height
+    center_x = box[:, 1] + 0.5 * width
+
+    gt_height = gt_box[:, 2] - gt_box[:, 0]
+    gt_width = gt_box[:, 3] - gt_box[:, 1]
+    gt_center_y = gt_box[:, 0] + 0.5 * gt_height
+    gt_center_x = gt_box[:, 1] + 0.5 * gt_width
+
+    dy = (gt_center_y - center_y) / height
+    dx = (gt_center_x - center_x) / width
+    dh = tf.log(gt_height / height)
+    dw = tf.log(gt_width / width)
+
+    result = tf.stack([dy, dx, dh, dw], axis=1)
+    return result
+
 def norm_boxes(boxes, shape):
     """Converts boxes from pixel coordinates to normalized coordinates.
     boxes: [N, (y1, x1, y2, x2)] in pixel coordinates
@@ -301,11 +335,25 @@ def norm_boxes(boxes, shape):
     Returns:
         [N, (y1, x1, y2, x2)] in normalized coordinates
     """
-    h, w = shape
+    h, w = shape[:2]
     scale = np.array([h - 1, w - 1, h - 1, w - 1])
     scale = map(np.float32,scale)
     shift = np.array([0, 0, 1, 1])
     boxes = np.divide((boxes - shift), scale).astype(np.float32)
+    return boxes
+
+def denorm_boxes(boxes, shape):
+    """Converts boxes from normalized coordinates to pixel coordinates.
+    boxes: [N, (y1, x1, y2, x2)] in normalized coordinates
+    shape: [..., (height, width)] in pixels
+    Note: In pixel coordinates (y2, x2) is outside the box. But in normalized coordinates it's inside the box.
+    Returns:
+        [N, (y1, x1, y2, x2)] in pixel coordinates
+    """
+    h, w = shape
+    scale = np.array([h - 1, w - 1, h - 1, w - 1])
+    shift = np.array([0, 0, 1, 1])
+    boxes = np.around(np.multiply(boxes, scale) + shift).astype(np.int32)
     return boxes
 
 def norm_boxes_graph(boxes, shape):

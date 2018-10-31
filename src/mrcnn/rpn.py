@@ -10,6 +10,10 @@
 ####################################################
 import numpy as np 
 import keras.layers as KL
+import keras.models as KM
+import tensorflow as tf
+from keras.utils import plot_model
+import keras.backend as K 
 
 ############################################################
 #  Region Proposal Network (RPN)
@@ -79,3 +83,9 @@ def build_rpn_model(anchor_stride, anchors_per_location, depth):
                                  name="input_rpn_feature_map")
     outputs = rpn_graph(input_feature_map, anchors_per_location, anchor_stride)
     return KM.Model([input_feature_map], outputs, name="rpn_model")
+
+if __name__=='__main__':
+    tp = K.ones(shape=(1,160,160,256))
+    net = build_rpn_model(1,3,256)
+    #net_out = net(tp)
+    plot_model(net,show_shapes=True,show_layer_names=True,to_file='rpn_cls')

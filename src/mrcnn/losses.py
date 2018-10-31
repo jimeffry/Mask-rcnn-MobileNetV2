@@ -9,9 +9,10 @@
 #description  papers:
 ####################################################
 import numpy as np 
+from mask_rcnn_config import Config as config
 import tensorflow as tf
 import keras.backend as K
-import mask_rcnn_config.Config as config
+
 ############################################################
 #  Loss Functions
 ############################################################
@@ -28,7 +29,6 @@ def smooth_l1_loss(y_true, y_pred):
 
 def rpn_class_loss_graph(rpn_match, rpn_class_logits):
     """RPN anchor classifier loss.
-
     rpn_match: [batch, anchors, 1]. Anchor match type. 1=positive,
                -1=negative, 0=neutral anchor.
     rpn_class_logits: [batch, anchors, 2]. RPN classifier logits for FG/BG.
@@ -79,16 +79,18 @@ def rpn_bbox_loss_graph(target_bbox, rpn_match, rpn_bbox):
 
     # Trim target bounding box deltas to the same length as rpn_bbox.
     batch_counts = K.sum(K.cast(K.equal(rpn_match, 1), tf.int32), axis=1)
+    batch_counts = tf.cast(batch_counts,tf.int32)
     #target_bbox = batch_pack_graph(target_bbox, batch_counts,
      #                              config.IMAGES_PER_GPU)
     target_bbox = batch_pack_graph(target_bbox, batch_counts,config.BATCH_SIZE)
     # TODO: use smooth_l1_loss() rather than reimplementing here
     #       to reduce code duplication
+    
     diff = K.abs(target_bbox - rpn_bbox)
     less_than_one = K.cast(K.less(diff, 1.0), "float32")
     loss = (less_than_one * 0.5 * diff**2) + (1 - less_than_one) * (diff - 0.5)
-
     loss = K.switch(tf.size(loss) > 0, K.mean(loss), tf.constant(0.0))
+    
     return loss
 
 
@@ -197,3 +199,19 @@ def mrcnn_mask_loss_graph(target_masks, target_class_ids, pred_masks):
                     tf.constant(0.0))
     loss = K.mean(loss)
     return loss
+
+if __name__=='__main__':
+    rpn_match = np.array([[[1],[1],[1],[0],[-1]],[[1],[1],[1],[0],[-1]]],dtype=np.int32)
+    #rpn_log = np.array([[[0.1,0.9],[0.4,0.6],[0.6,0.4],[0.7,0.3],[0.2,0.8]],\
+     #                   [[0.1,0.9],[0.4,0.6],[0.6,0.4],[0.7,0.3],[0.2,0.8]]],dtype=np.float32)
+    rpn_log = np.array([[[0.1,0.9,-0.1,-0.3],[0.4,0.6,-0.1,-0.1],[0.6,0.4,0.1,0.1],[0.7,0.3,0.5,0.5],[0.2,0.8,-0.5,0.3]],\
+                        [[0.1,0.9,-0.1,-0.3],[0.4,0.6,-0.1,-0.1],[0.6,0.4,0.1,0.1],[0.7,0.3,0.5,0.5],[0.2,0.8,-0.5,0.3]]],dtype=np.float32)
+    rpn_tar = np.array([[[0.3,0.8,-0.1,-0.3],[0.4,0.6,0.1,0.1],[0.6,0.4,-0.1,-0.1]],\
+                        [[0.3,0.8,-0.1,-0.3],[0.4,0.6,0.1,0.1],[0.6,0.4,-0.1,-0.1]]],dtype=np.float32)
+    graph = tf.Graph()
+    with graph.as_default():
+       ls,te = rpn_bbox_loss_graph(rpn_tar,rpn_match,rpn_log)
+       sess = tf.Session()
+       out = sess.run([ls,te])
+    print(out)
+    print(out[1][0])

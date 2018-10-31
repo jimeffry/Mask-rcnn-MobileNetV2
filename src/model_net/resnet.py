@@ -165,6 +165,6 @@ def vis_net(model):
     plot_model(model,show_shapes=True,show_layer_names=True,to_file='model_resnet.png')
 
 if __name__ == '__main__':
-    net = get_symbol([1024,1024,3],'resnet50')
+    net = get_symbol([640,640,3],'resnet50')
     #net = test()
     vis_net(net)

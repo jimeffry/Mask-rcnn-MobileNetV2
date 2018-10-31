@@ -40,7 +40,7 @@ def fpn_classifier_graph(rois, feature_maps, image_meta,
     # ROI Pooling
     # Shape: [batch, num_boxes, pool_height, pool_width, channels]
     x = PyramidROIAlign([pool_size, pool_size],
-                        name="roi_align_classifier")([rois, image_meta, feature_maps])
+                        name="roi_align_classifier")([rois, image_meta]+feature_maps)
     # Two 1024 FC layers (implemented with Conv2D for consistency)
     x = KL.TimeDistributed(KL.Conv2D(fc_layers_size, (pool_size, pool_size), padding="valid"),
                            name="mrcnn_class_conv1")(x)
@@ -89,30 +89,30 @@ def build_fpn_mask_graph(rois, feature_maps, image_meta,
     # ROI Pooling
     # Shape: [batch, boxes, pool_height, pool_width, channels]
     x = PyramidROIAlign([pool_size, pool_size],
-                        name="roi_align_mask")([rois, image_meta, feature_maps])
+                        name="roi_align_mask")([rois, image_meta]+feature_maps)
 
     # Conv layers
     x = KL.TimeDistributed(KL.Conv2D(256, (3, 3), padding="same"),
                            name="mrcnn_mask_conv1")(x)
-    x = KL.TimeDistributed(BatchNorm(),
+    x = KL.TimeDistributed(KL.BatchNormalization(),
                            name='mrcnn_mask_bn1')(x, training=train_bn)
     x = KL.Activation('relu')(x)
 
     x = KL.TimeDistributed(KL.Conv2D(256, (3, 3), padding="same"),
                            name="mrcnn_mask_conv2")(x)
-    x = KL.TimeDistributed(BatchNorm(),
+    x = KL.TimeDistributed(KL.BatchNormalization(),
                            name='mrcnn_mask_bn2')(x, training=train_bn)
     x = KL.Activation('relu')(x)
 
     x = KL.TimeDistributed(KL.Conv2D(256, (3, 3), padding="same"),
                            name="mrcnn_mask_conv3")(x)
-    x = KL.TimeDistributed(BatchNorm(),
+    x = KL.TimeDistributed(KL.BatchNormalization(),
                            name='mrcnn_mask_bn3')(x, training=train_bn)
     x = KL.Activation('relu')(x)
 
     x = KL.TimeDistributed(KL.Conv2D(256, (3, 3), padding="same"),
                            name="mrcnn_mask_conv4")(x)
-    x = KL.TimeDistributed(BatchNorm(),
+    x = KL.TimeDistributed(KL.BatchNormalization(),
                            name='mrcnn_mask_bn4')(x, training=train_bn)
     x = KL.Activation('relu')(x)
 

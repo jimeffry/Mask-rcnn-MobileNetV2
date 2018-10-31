@@ -15,7 +15,7 @@ import tensorflow as tf
 import common
 import sys 
 sys.path.append('../')
-from mask_rcnn_config import Config as config
+from mrcnn.mask_rcnn_config import Config as config
 
 ############################################################
 #  Proposal Layer
@@ -98,9 +98,9 @@ class ProposalLayer(KE.Layer):
                          name="top_anchors").indices
         scores = common.batch_slice([scores, idx], lambda x, y: tf.gather(x, y),
                                    config.IMAGES_PER_GPU)
-        deltas = common.batch_slice([deltas, ix], lambda x, y: tf.gather(x, y),
+        deltas = common.batch_slice([deltas, idx], lambda x, y: tf.gather(x, y),
                                    config.IMAGES_PER_GPU)
-        pre_nms_anchors = common.batch_slice([anchors, ix], lambda a, x: tf.gather(a, x),
+        pre_nms_anchors = common.batch_slice([anchors, idx], lambda a, x: tf.gather(a, x),
                                     config.IMAGES_PER_GPU,
                                     names=["pre_nms_anchors"])
 
@@ -114,7 +114,7 @@ class ProposalLayer(KE.Layer):
         window = np.array([0, 0, 1, 1], dtype=np.float32)
         boxes = common.batch_slice(boxes,
                                   lambda x: clip_boxes_graph(x, window),
-                                  self.config.IMAGES_PER_GPU,
+                                  config.IMAGES_PER_GPU,
                                   names=["refined_anchors_clipped"])
         # Filter out small boxes
         # According to Xinlei Chen's paper, this reduces detection accuracy
@@ -132,7 +132,7 @@ class ProposalLayer(KE.Layer):
             return proposals
 
         proposals = common.batch_slice([boxes, scores], nms,
-                                      self.config.IMAGES_PER_GPU)
+                                      config.IMAGES_PER_GPU)
         return proposals
 
     def compute_output_shape(self, input_shape):

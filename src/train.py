@@ -8,17 +8,71 @@
 #modified:
 #description  papers:
 ####################################################
-
+import os
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
+os.environ['CUDA_VISIBLE_DEVICES'] = '1'
 import numpy as np 
-
 import cv2
+import argparse
+import sys 
+import keras 
+import tensorflow as tf 
+from test.evaluate import evaluate_coco
+from mrcnn.mask_rcnn_config import Config as CocoConfig
+from mrcnn.mask_rcnn_model import MaskRCNN 
+from data.load_dataset import CocoDataset
+from keras.utils import plot_model
+from imgaug import augmenters as iaa
 
 
-def train():
+
+def params():
+    parser = argparse.ArgumentParser(description='Mask RCNN Train')
+    parser.add_argument('--command',type=str,default='inference',\
+            help='run training or inference, evalute')
+    parser.add_argument('--model-path',dest='model_path',type=str,default='../models',\
+            help='load which model or save model path')
+    parser.add_argument('--dataset-path',dest='dataset_path',type=str,\
+            default='/home/lxy/Downloads/DataSet/COCO-2017/', help='coco dataset path ')
+    parser.add_argument('--coco-year',dest='coco_year',type=str,\
+            default='2017',help='load coco dataset year')
+    parser.add_argument('--download',type=bool,default=False,\
+            help='if not exist download the data')
+    parser.add_argument('--log-dir',dest='log_dir',type=str,\
+            default='../logs',help='save logs dir')
+    parser.add_argument('--load-epoch',dest='load_epoch',type=int,\
+            default=None,help='which model to load')
+    parser.add_argument('--epochs',type=int,default=100000,\
+            help='how much num to train')
+    parser.add_argument('--learning-rate',dest='learning_rate',type=float,\
+            default=0.1,help='trianing learn rate')
+    parser.add_argument('--class-names',dest='class_names',type=str,\
+            default='person',help='classes to load to train')
+    return parser.parse_args()
+
+
+def display_model(model):
+    plot_model(model,show_shapes=True,show_layer_names=True,to_file='mrcnn.png')
+
+def train(args):
     '''
     train mrcnn models on coco dataset
     '''
-    if args.command == "train":
+    command = args.command
+    year = args.coco_year
+    model_path = args.model_path
+    load_epoch = args.load_epoch
+    log_dir = args.log_dir
+    dataset_path = args.dataset_path
+    download_fg = args.download
+    class_names = args.class_names.split(',')
+    LEARNING_RATE = args.learning_rate
+    epoch_num = args.epochs
+    print("here")
+    config = tf.ConfigProto( device_count = {'GPU': 1 } ) 
+    sess = tf.Session(config=config) 
+    keras.backend.set_session(sess)
+    if command == "train":
         config = CocoConfig()
     else:
         class InferenceConfig(CocoConfig):
@@ -26,63 +80,52 @@ def train():
             # one image at a time. Batch size = GPU_COUNT * IMAGES_PER_GPU
             GPU_COUNT = 1
             IMAGES_PER_GPU = 1
-            DETECTION_MIN_CONFIDENCE = 0
+            DETECTION_MIN_CONFIDENCE = 0.5
         config = InferenceConfig()
-    config.display()
-
     # Create model
-    if args.command == "train":
-        model = modellib.MaskRCNN(mode="training", config=config,
-                                  model_dir=args.logs)
+    if command == "train":
+        print("build net")
+        model = MaskRCNN(mode="training", config=config,
+                                  model_dir=model_path)
+    elif command == 'inference':
+        model = MaskRCNN(mode="inference", config=config,
+                                  model_dir=model_path)
     else:
-        model = modellib.MaskRCNN(mode="inference", config=config,
-                                  model_dir=args.logs)
-    # Select weights file to load
-    if args.model.lower() == "coco":
-        model_path = COCO_MODEL_PATH
-    elif args.model.lower() == "last":
-        # Find last trained weights
-        model_path = model.find_last()
-    elif args.model.lower() == "imagenet":
-        # Start from ImageNet trained weights
-        model_path = model.get_imagenet_weights()
-    else:
-        model_path = args.model
-
+        print("No commond")
+    if config.displaymodel:
+        display_model(model.keras_model)
     # Load weights
-    print("Loading weights ", model_path)
-    model.load_weights(model_path, by_name=True)
-
+    if load_epoch is not None:
+        print("Loading weights ", model_path)
+        model.load_weights(model_path, by_name=True)
     # Train or evaluate
-    if args.command == "train":
+    if command == "train":
         # Training dataset. Use the training set and 35K from the
         # validation set, as as in the Mask RCNN paper.
         dataset_train = CocoDataset()
-        dataset_train.load_coco(args.dataset, "train", year=args.year, auto_download=args.download,class_names=['person'])
-        if args.year in '2014':
-            dataset_train.load_coco(args.dataset, "valminusminival", year=args.year, auto_download=args.download)
+        print("begin to load data")
+        dataset_train.load_coco(dataset_path, "train", year=year, auto_download=download_fg,class_names=['person'])
+        if year in '2014':
+            dataset_train.load_coco(dataset_path, "valminusminival", year=year, auto_download=download_fg)
         dataset_train.prepare()
-
         # Validation dataset
         dataset_val = CocoDataset()
-        val_type = "val" if args.year in '2017' else "minival"
-        dataset_val.load_coco(args.dataset, val_type, year=args.year, auto_download=args.download,class_names=['person'])
+        val_type = "val" if year in '2017' else "minival"
+        dataset_val.load_coco(dataset_path, val_type, year=year, auto_download=download_fg,class_names=['person'])
         dataset_val.prepare()
-
         # Image Augmentation
         # Right/Left flip 50% of the time
-        augmentation = imgaug.augmenters.Fliplr(0.5)
-
+        augmentation = iaa.Fliplr(0.5)
         # *** This training schedule is an example. Update to your needs ***
 
         # Training - Stage 1
         print("Training network heads")
         model.train(dataset_train, dataset_val,
-                    learning_rate=config.LEARNING_RATE,
-                    epochs=40,
+                    learning_rate=LEARNING_RATE,
+                    epochs=epoch_num,
                     layers='heads',
                     augmentation=augmentation)
-
+        '''
         # Training - Stage 2
         # Finetune layers from ResNet stage 4 and up
         print("Fine tune Resnet stage 4 and up")
@@ -100,15 +143,19 @@ def train():
                     epochs=160,
                     layers='all',
                     augmentation=augmentation)
+        '''
 
-    elif args.command == "evaluate":
+    elif command == "evaluate":
         # Validation dataset
         dataset_val = CocoDataset()
-        val_type = "val" if args.year in '2017' else "minival"
-        coco = dataset_val.load_coco(args.dataset, val_type, year=args.year, return_coco=True, auto_download=args.download)
+        val_type = "val" if year in '2017' else "minival"
+        coco = dataset_val.load_coco(dataset_path, val_type, year=year, return_coco=True, auto_download=download_fg)
         dataset_val.prepare()
-        print("Running COCO evaluation on {} images.".format(args.limit))
-        evaluate_coco(model, dataset_val, coco, "bbox", limit=int(args.limit))
+        evaluate_coco(model, dataset_val, coco, "bbox", limit=int(500))
     else:
         print("'{}' is not recognized. "
-              "Use 'train' or 'evaluate'".format(args.command))
+              "Use 'train' or 'evaluate'".format(command))
+
+if __name__ == '__main__':
+    args = params()
+    train(args)

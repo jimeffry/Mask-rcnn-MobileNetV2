@@ -9,6 +9,7 @@
 #description  papers:
 ####################################################
 import numpy as np 
+import logging
 import sys
 sys.path.append('../')
 from utils import common as process_img
@@ -16,6 +17,8 @@ from utils.generate_anchors import generate_pyramid_anchors
 from utils.generate_roi_target import build_roi_targets
 from utils.generate_anchors_target import build_rpn_targets
 from mrcnn.mask_rcnn_config import Config as config
+
+config = config()
 
 
 def load_image_gt(dataset, image_id, augment=False, augmentation=None,
@@ -53,7 +56,6 @@ def load_image_gt(dataset, image_id, augment=False, augmentation=None,
         max_dim=config.IMAGE_MAX_DIM,
         mode=config.IMAGE_RESIZE_MODE)
     mask = process_img.resize_mask(mask, scale, padding, crop)
-
     # Random horizontal flips.
     # TODO: will be removed in a future update in favor of augmentation
     if augment:
@@ -61,38 +63,33 @@ def load_image_gt(dataset, image_id, augment=False, augmentation=None,
         if random.randint(0, 1):
             image = np.fliplr(image)
             mask = np.fliplr(mask)
-
     # Augmentation
     # This requires the imgaug lib (https://github.com/aleju/imgaug)
     if augmentation:
-        import imgaug
-
+        import imgaug as ia 
         # Augmenters that are safe to apply to masks
         # Some, such as Affine, have settings that make them unsafe, so always
         # test your augmentation on masks
         MASK_AUGMENTERS = ["Sequential", "SomeOf", "OneOf", "Sometimes",
                            "Fliplr", "Flipud", "CropAndPad",
                            "Affine", "PiecewiseAffine"]
-
         def hook(images, augmenter, parents, default):
             """Determines which augmenters to apply to masks."""
             return augmenter.__class__.__name__ in MASK_AUGMENTERS
-
         # Store shapes before augmentation to compare
         image_shape = image.shape
         mask_shape = mask.shape
         # Make augmenters deterministic to apply similarly to images and masks
         det = augmentation.to_deterministic()
         image = det.augment_image(image)
+        hook_mask = ia.HooksImages(activator=hook)
         # Change mask to np.uint8 because imgaug doesn't support np.bool
-        mask = det.augment_image(mask.astype(np.uint8),
-                                 hooks=imgaug.HooksImages(activator=hook))
+        mask = det.augment_image(mask.astype(np.uint8),hooks=hook_mask)
         # Verify that shapes didn't change
         assert image.shape == image_shape, "Augmentation shouldn't change image size"
         assert mask.shape == mask_shape, "Augmentation shouldn't change mask size"
         # Change mask back to bool
         mask = mask.astype(np.bool)
-
     # Note that some boxes might be all zeros if the corresponding mask got cropped out.
     # and here is to filter them out
     _idx = np.sum(mask, axis=(0, 1)) > 0
@@ -102,27 +99,23 @@ def load_image_gt(dataset, image_id, augment=False, augmentation=None,
     # if the corresponding mask got cropped out.
     # bbox: [num_instances, (y1, x1, y2, x2)]
     bbox = process_img.extract_bboxes(mask)
-
     # Active classes
     # Different datasets have different classes, so track the
     # classes supported in the dataset of this image.
     active_class_ids = np.zeros([dataset.num_classes], dtype=np.int32)
     source_class_ids = dataset.source_class_ids[dataset.image_info[image_id]["source"]]
     active_class_ids[source_class_ids] = 1
-
     # Resize masks to smaller size to reduce memory usage
     if use_mini_mask:
         mask = process_img.minimize_mask(bbox, mask, config.MINI_MASK_SHAPE)
-
     # Image meta data
     image_meta = process_img.compose_image_meta(image_id, original_shape, image.shape,
                                     window, scale, active_class_ids)
-
     return image, image_meta, class_ids, bbox, mask
 
 
 
-def data_generator(dataset, config, shuffle=True, augment=False, augmentation=None,
+def data_generator(dataset, shuffle=True, augment=False, augmentation=None,
                    random_rois=0, batch_size=1, detection_targets=False,
                    no_augmentation_sources=None):
     """A generator that returns images and corresponding target class ids,
@@ -180,32 +173,27 @@ def data_generator(dataset, config, shuffle=True, augment=False, augmentation=No
             image_index = (image_index + 1) % len(image_ids)
             if shuffle and image_index == 0:
                 np.random.shuffle(image_ids)
-
             # Get GT bounding boxes and masks for image.
             image_id = image_ids[image_index]
-
             # If the image source is not to be augmented pass None as augmentation
             if dataset.image_info[image_id]['source'] in no_augmentation_sources:
                 image, image_meta, gt_class_ids, gt_boxes, gt_masks = \
-                load_image_gt(dataset, config, image_id, augment=augment,
+                load_image_gt(dataset, image_id, augment=augment,
                               augmentation=None,
                               use_mini_mask=config.USE_MINI_MASK)
             else:
                 image, image_meta, gt_class_ids, gt_boxes, gt_masks = \
-                    load_image_gt(dataset, config, image_id, augment=augment,
+                    load_image_gt(dataset, image_id, augment=augment,
                                 augmentation=augmentation,
                                 use_mini_mask=config.USE_MINI_MASK)
-
             # Skip images that have no instances. This can happen in cases
             # where we train on a subset of classes and the image doesn't
             # have any of the classes we care about.
             if not np.any(gt_class_ids > 0):
                 continue
-
             # RPN Targets
             rpn_match, rpn_bbox = build_rpn_targets(image.shape, anchors,
-                                                    gt_class_ids, gt_boxes, config)
-
+                                                    gt_class_ids, gt_boxes)
             # Mask R-CNN Targets
             if random_rois:
                 rpn_rois = generate_random_rois(
@@ -213,8 +201,7 @@ def data_generator(dataset, config, shuffle=True, augment=False, augmentation=No
                 if detection_targets:
                     rois, mrcnn_class_ids, mrcnn_bbox, mrcnn_mask =\
                         build_roi_targets(
-                            rpn_rois, gt_class_ids, gt_boxes, gt_masks, config)
-
+                            rpn_rois, gt_class_ids, gt_boxes, gt_masks)
             # Init batch arrays
             if b == 0:
                 batch_image_meta = np.zeros(
@@ -244,7 +231,6 @@ def data_generator(dataset, config, shuffle=True, augment=False, augmentation=No
                             (batch_size,) + mrcnn_bbox.shape, dtype=mrcnn_bbox.dtype)
                         batch_mrcnn_mask = np.zeros(
                             (batch_size,) + mrcnn_mask.shape, dtype=mrcnn_mask.dtype)
-
             # If more instances than fits in the array, sub-sample from them.
             if gt_boxes.shape[0] > config.MAX_GT_INSTANCES:
                 ids = np.random.choice(
@@ -252,12 +238,11 @@ def data_generator(dataset, config, shuffle=True, augment=False, augmentation=No
                 gt_class_ids = gt_class_ids[ids]
                 gt_boxes = gt_boxes[ids]
                 gt_masks = gt_masks[:, :, ids]
-
             # Add to batch
             batch_image_meta[b] = image_meta
             batch_rpn_match[b] = rpn_match[:, np.newaxis]
             batch_rpn_bbox[b] = rpn_bbox
-            batch_images[b] = mold_image(image.astype(np.float32), config)
+            batch_images[b] = process_img.mold_image(image.astype(np.float32))
             batch_gt_class_ids[b, :gt_class_ids.shape[0]] = gt_class_ids
             batch_gt_boxes[b, :gt_boxes.shape[0]] = gt_boxes
             batch_gt_masks[b, :, :, :gt_masks.shape[-1]] = gt_masks
@@ -274,7 +259,6 @@ def data_generator(dataset, config, shuffle=True, augment=False, augmentation=No
                 inputs = [batch_images, batch_image_meta, batch_rpn_match, batch_rpn_bbox,
                           batch_gt_class_ids, batch_gt_boxes, batch_gt_masks]
                 outputs = []
-
                 if random_rois:
                     inputs.extend([batch_rpn_rois])
                     if detection_targets:

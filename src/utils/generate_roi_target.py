@@ -9,7 +9,6 @@
 #description  papers:
 ####################################################
 import numpy as np 
-import process_img
 import cv2
 import keras.engine as KE
 import tensorflow as tf
@@ -17,6 +16,7 @@ import common
 import sys
 sys.path.append("../")
 from mrcnn.mask_rcnn_config import Config as config
+config = config()
 
 def build_roi_targets(rpn_rois, gt_class_ids, gt_boxes, gt_masks):
     """Generate targets for training Stage 2 classifier and mask heads.
@@ -239,13 +239,13 @@ def detection_targets_graph(proposals, gt_class_ids, gt_boxes, gt_masks):
     # Subsample ROIs. Aim for 33% positive
     # Positive ROIs
     positive_count = int(config.TRAIN_ROIS_PER_IMAGE * config.ROI_POSITIVE_RATIO)
-    positive_count = int(tf.minimum(tf.shape(positive_indices)[0],positive_count))
+    positive_count = tf.cast(tf.minimum(tf.shape(positive_indices)[0],positive_count),tf.int32)
     positive_indices = tf.random_shuffle(positive_indices)[:positive_count]
     #positive_count = tf.shape(positive_indices)[0]
     # Negative ROIs. Add enough to maintain positive:negative ratio.
     r = 1.0 / config.ROI_POSITIVE_RATIO
     negative_count = tf.cast(r * tf.cast(positive_count, tf.float32), tf.int32) - positive_count
-    negative_count = int(tf.minimum(tf.shape(negative_indices)[0],negative_count))
+    negative_count = tf.cast(tf.minimum(tf.shape(negative_indices)[0],negative_count),tf.int32)
     negative_indices = tf.random_shuffle(negative_indices)[:negative_count]
     # Gather selected ROIs
     #positive_rois = tf.gather(proposals, positive_indices)
@@ -261,7 +261,7 @@ def detection_targets_graph(proposals, gt_class_ids, gt_boxes, gt_masks):
         false_fn = lambda: tf.cast(tf.constant([]),tf.int64)
     )
     '''
-    roi_gt_assignment = tf.cond(tf.greater(tf.shape(positive_indices)[0],0),\
+    roi_gt_box_assignment = tf.cond(tf.greater(tf.shape(positive_indices)[0],0),\
         true_fn=lambda: positive_indices, false_fn=lambda: tf.cast(tf.constant([]),tf.int64))
     roi_gt_boxes = tf.gather(gt_boxes, roi_gt_box_assignment)
     roi_gt_class_ids = tf.gather(gt_class_ids, roi_gt_box_assignment)
@@ -350,11 +350,11 @@ class DetectionTargetLayer(KE.Layer):
 
     def compute_output_shape(self, input_shape):
         return [
-            (None, self.config.TRAIN_ROIS_PER_IMAGE, 4),  # rois
+            (None, config.TRAIN_ROIS_PER_IMAGE, 4),  # rois
             (None, 1),  # class_ids
-            (None, self.config.TRAIN_ROIS_PER_IMAGE, 4),  # deltas
-            (None, self.config.TRAIN_ROIS_PER_IMAGE, self.config.MASK_SHAPE[0],
-             self.config.MASK_SHAPE[1])  # masks
+            (None, config.TRAIN_ROIS_PER_IMAGE, 4),  # deltas
+            (None, config.TRAIN_ROIS_PER_IMAGE, config.MASK_SHAPE[0],
+             config.MASK_SHAPE[1])  # masks
         ]
     def compute_mask(self, inputs, mask=None):
         return [None, None, None, None]

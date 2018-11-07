@@ -412,7 +412,7 @@ class MaskRCNN():
         self.checkpoint_path = self.checkpoint_path.replace(
             "*epoch*", "{epoch:04d}")
 
-    def train(self, train_dataset, val_dataset, learning_rate, epochs, layers,
+    def train(self, train_dataset, val_dataset, learning_rate, epochs, layers,patience,
               augmentation=None, custom_callbacks=None, no_augmentation_sources=None):
         """Train the model.
         train_dataset, val_dataset: Training and validation Dataset objects.
@@ -472,7 +472,9 @@ class MaskRCNN():
             keras.callbacks.TensorBoard(log_dir=self.log_dir,
                                         histogram_freq=0, write_graph=True, write_images=False),
             keras.callbacks.ModelCheckpoint(self.checkpoint_path,
-                                            verbose=1, save_weights_only=True)]
+                                            verbose=1, save_weights_only=True),
+            keras.callbacks.ReduceLROnPlateau('val_loss', factor=0.1,patience=int(patience), verbose=1,min_lr=0.00001)
+                                            ]
         # Add custom callbacks to the list
         if custom_callbacks:
             callbacks += custom_callbacks

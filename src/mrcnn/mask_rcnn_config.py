@@ -35,6 +35,10 @@ class Config(object):
     # experiment is running.
     NAME = 'COCO'  # Override in sub-classes
 
+    # train objects
+    ObjectNames = ['person', 'bicycle', 'car', 'motorcycle','bus','truck','traffic light','cell phone','hair drier','stop sign', 'parking meter']
+    # Number of classification classes (including background)
+    NUM_CLASSES = 12  # Override in sub-classes
     # NUMBER OF GPUs to use. For CPU training, use 1
     GPU_COUNT = 1
 
@@ -74,8 +78,7 @@ class Config(object):
     FPN_CLASSIF_FC_LAYERS_SIZE = 1024
     # Size of the top-down layers used to build the feature pyramid
     TOP_DOWN_PYRAMID_SIZE = 256
-    # Number of classification classes (including background)
-    NUM_CLASSES = 2  # Override in sub-classes
+
     # Length of square anchor side in pixels
     RPN_ANCHOR_SCALES = (32, 64, 128, 256, 512) #resnet
     #RPN_ANCHOR_SCALES = [16,32, 64, 128, 256]

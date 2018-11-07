@@ -82,7 +82,7 @@ def rpn_bbox_loss_graph(target_bbox, rpn_match, rpn_bbox):
     batch_counts = tf.cast(batch_counts,tf.int32)
     #target_bbox = batch_pack_graph(target_bbox, batch_counts,
      #                              config.IMAGES_PER_GPU)
-    target_bbox = batch_pack_graph(target_bbox, batch_counts,config.BATCH_SIZE)
+    target_bbox = batch_pack_graph(target_bbox, batch_counts,config.IMAGES_PER_GPU)
     # TODO: use smooth_l1_loss() rather than reimplementing here
     #       to reduce code duplication
     

@@ -10,7 +10,6 @@
 ####################################################
 import os
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
-os.environ['CUDA_VISIBLE_DEVICES'] = '1'
 import numpy as np 
 import cv2
 import argparse
@@ -40,19 +39,31 @@ def params():
             help='if not exist download the data')
     parser.add_argument('--log-dir',dest='log_dir',type=str,\
             default='../logs',help='save logs dir')
-    parser.add_argument('--load-epoch',dest='load_epoch',type=int,\
+    parser.add_argument('--load-epoch',dest='load_epoch',type=str,\
             default=None,help='which model to load')
     parser.add_argument('--epochs',type=int,default=100000,\
             help='how much num to train')
     parser.add_argument('--learning-rate',dest='learning_rate',type=float,\
-            default=0.1,help='trianing learn rate')
+            default=0.02,help='trianing learn rate')
     parser.add_argument('--class-names',dest='class_names',type=str,\
             default='person',help='classes to load to train')
+    parser.add_argument('--lr-patience',dest='lr_patience',type=int,\
+            default=2,help='how many epochs to reduce lr')
     return parser.parse_args()
 
 
 def display_model(model):
     plot_model(model,show_shapes=True,show_layer_names=True,to_file='mrcnn.png')
+
+def set_gpu(gpu_list):
+    #config = tf.ConfigProto( device_count = {'GPU': 0 } ) 
+    #sess = tf.Session(config=config) 
+    #keras.backend.set_session(sess)
+    if not isinstance(gpu_list,list):
+        gpu_list = [gpu_list]
+    gpu_list = map(str,gpu_list)
+    gpu_num = ','.join(gpu_list)
+    os.environ['CUDA_VISIBLE_DEVICES'] = gpu_num
 
 def train(args):
     '''
@@ -68,10 +79,9 @@ def train(args):
     class_names = args.class_names.split(',')
     LEARNING_RATE = args.learning_rate
     epoch_num = args.epochs
+    lr_patience = args.lr_patience
     print("here")
-    config = tf.ConfigProto( device_count = {'GPU': 1 } ) 
-    sess = tf.Session(config=config) 
-    keras.backend.set_session(sess)
+
     if command == "train":
         config = CocoConfig()
     else:
@@ -96,22 +106,22 @@ def train(args):
         display_model(model.keras_model)
     # Load weights
     if load_epoch is not None:
-        print("Loading weights ", model_path)
-        model.load_weights(model_path, by_name=True)
+        print("Loading weights ", load_epoch)
+        model.load_weights(load_epoch, by_name=True)
     # Train or evaluate
     if command == "train":
         # Training dataset. Use the training set and 35K from the
         # validation set, as as in the Mask RCNN paper.
         dataset_train = CocoDataset()
         print("begin to load data")
-        dataset_train.load_coco(dataset_path, "train", year=year, auto_download=download_fg,class_names=['person'])
+        dataset_train.load_coco(dataset_path, "train", year=year, auto_download=download_fg,class_names=config.ObjectNames)
         if year in '2014':
             dataset_train.load_coco(dataset_path, "valminusminival", year=year, auto_download=download_fg)
         dataset_train.prepare()
         # Validation dataset
         dataset_val = CocoDataset()
         val_type = "val" if year in '2017' else "minival"
-        dataset_val.load_coco(dataset_path, val_type, year=year, auto_download=download_fg,class_names=['person'])
+        dataset_val.load_coco(dataset_path, val_type, year=year, auto_download=download_fg,class_names=config.ObjectNames)
         dataset_val.prepare()
         # Image Augmentation
         # Right/Left flip 50% of the time
@@ -124,6 +134,7 @@ def train(args):
                     learning_rate=LEARNING_RATE,
                     epochs=epoch_num,
                     layers='heads',
+                    patience = lr_patience,
                     augmentation=augmentation)
         '''
         # Training - Stage 2

@@ -11,7 +11,6 @@
 import time
 import sys 
 sys.path.append('/home/lxy/software/cocoapi/PythonAPI/')
-from pycocotools.coco import COCO
 from pycocotools.cocoeval import COCOeval
 
 def evaluate_coco(model, dataset, coco, eval_type="bbox", limit=0, image_ids=None):

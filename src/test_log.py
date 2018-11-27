@@ -2,6 +2,41 @@ import numpy as np
 import sys
 import tensorflow as tf 
 
+import tensorflow as tf
+import keras.backend.tensorflow_backend as KTF
+# set keras run on gpu
+os.environ["CUDA_VISIBLE_DEVICES"] = "3"  #设置需要使用的GPU的编号
+config = tf.ConfigProto()
+config.gpu_options.per_process_gpu_memory_fraction = 0.4 #设置使用GPU容量占GPU总容量的比例
+sess = tf.Session(config=config)
+KTF.set_session(sess)
+
+#check gpu avaliable
+from keras import backend as K
+K.tensorflow_backend._get_available_gpus()
+#check gpu avaliable
+import tensorflow
+from tensorflow.python.client import device_lib
+print(device_lib.list_local_devices())
+
+def set-anaconda_keras_backend():
+    '''
+    There is a file keras_activate.sh in the path "/anaconda2/envs/py2/etc/conda/activate.d".
+    Then editing it, delete the content :
+        "if [ "$(uname)" == "Darwin" ] 
+        then
+        # for Mac OSX
+            export KERAS_BACKEND=tensorflow
+        elif [ "$(uname)" == "Linux" ] 
+        then
+        # for Linux
+            export KERAS_BACKEND=theano
+        fi". 
+    after that, add the line :
+    set "KERAS_BACKEND=tensorflow"
+    '''
+
+
 def log_(in_data):
     return np.log(in_data)/np.log(2.0)
 
@@ -73,7 +108,7 @@ class test_tf(object):
         pooled = tf.reshape(pooled,n_shape)
         return pooled,ix,sorting_tensor
 
-if __name__ == '__main__':
+def test():
     '''
     a = float(sys.argv[1])
     b = log_(a/64.0)
@@ -141,3 +176,22 @@ if __name__ == '__main__':
         t2 = sess.run(t)
     print(t2)
 '''
+import cv2 
+
+def findcontours():
+    img = cv2.imread('../th.jpeg')
+    gray = cv2.cvtColor(img,cv2.COLOR_BGR2GRAY)
+    ret, binary = cv2.threshold(gray,127,255,cv2.THRESH_BINARY)
+    img_out,contours,herity = cv2.findContours(binary,cv2.RETR_TREE,cv2.CHAIN_APPROX_SIMPLE)
+    print(np.shape(img))
+    print(np.shape(contours))
+    print(herity)
+    print(np.shape(contours[1]))
+    print(contours[1])
+    #print(contours[])
+    cv2.drawContours(img,contours[1],-1,(0,255,0),20)
+    cv2.imshow("img", img)  
+    cv2.waitKey(0)
+
+if __name__ == '__main__':
+    findcontours()

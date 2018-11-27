@@ -19,13 +19,14 @@ import tensorflow as tf
 import keras.layers as KL
 import keras.backend as K
 import keras.models as KM
-from model_net.mobilenet import get_symbol
+from keras.utils import multi_gpu_model
 from feature_pyramid_net import get_fpn
 from rpn import build_rpn_model,rpn_graph
 from losses import *
 from faster_rcnn import fpn_classifier_graph,build_fpn_mask_graph
 import sys 
 sys.path.append('../')
+from model_net.mobilenet import get_symbol
 from utils.generate_anchors import generate_pyramid_anchors
 from utils import common as UT 
 from utils.generate_proposals import ProposalLayer
@@ -50,14 +51,16 @@ class MaskRCNN():
     """Encapsulates the Mask RCNN model functionality.
     The actual Keras model is in the keras_model property.
     """
-    def __init__(self, mode, config, model_dir):
+    def __init__(self, mode, config, model_dir,train_stage):
         """
         mode: Either "training" or "inference"
         config: A Sub-class of the Config class
         model_dir: Directory to save training logs and trained weights
+        train_stage: heads, 3+,4+, all
         """
         assert mode in ['training', 'inference']
         self.mode = mode
+        self.train_stage = train_stage
         self.config = config
         self.model_dir = model_dir
         self.set_log_dir()
@@ -132,13 +135,22 @@ class MaskRCNN():
             mrcnn_feature_maps = [P1,P2,P3,P4,P5]
         # Anchors
         if mode == "training":
+    
             anchors = generate_pyramid_anchors(config.IMAGE_SHAPE)
             anchors = UT.norm_boxes(anchors,config.IMAGE_SHAPE)
             # Duplicate across the batch dimension because Keras requires it
             # TODO: can this be optimized to avoid duplicating the anchors?
             anchors = np.broadcast_to(anchors, (config.BATCH_SIZE,) + anchors.shape)
             # A hack to get around Keras's bad support for constants
-            anchors = tf.Variable(anchors)
+            anchors = KL.Lambda(lambda x : tf.Variable(anchors),name="anchors")(input_image)
+            '''
+            anchors = self.get_anchors(config.IMAGE_SHAPE)
+            # Duplicate across the batch dimension because Keras requires it
+            # TODO: can this be optimized to avoid duplicating the anchors?
+            anchors = np.broadcast_to(anchors, (config.BATCH_SIZE,) + anchors.shape)
+            # A hack to get around Keras's bad support for constants
+            anchors = KL.Lambda(lambda x: tf.Variable(anchors), name="anchors")(input_image)
+            '''
         else:
             anchors = input_anchors
         # RPN Model
@@ -213,8 +225,11 @@ class MaskRCNN():
                       input_rpn_match, input_rpn_bbox, input_gt_class_ids, input_gt_boxes, input_gt_masks]
             if not config.USE_RPN_ROIS:
                 inputs.append(input_rois)
-            #outputs_data = [rpn_class_loss, rpn_bbox_loss, class_loss, bbox_loss, mask_loss]
-            outputs_data = [rpn_class_loss, rpn_bbox_loss]
+            if self.train_stage == 'heads':
+                outputs_data = [rpn_class_loss, rpn_bbox_loss]
+            else:
+                outputs_data = [rpn_class_loss, rpn_bbox_loss, class_loss, bbox_loss, mask_loss]
+            #
             model = KM.Model(inputs=inputs_data, outputs=outputs_data, name='mask_rcnn')
         else:
             # Network Heads
@@ -241,12 +256,26 @@ class MaskRCNN():
                                  mrcnn_mask, rpn_rois, rpn_class, rpn_bbox],
                              name='mask_rcnn')
         # Add multi-GPU support.
-        '''
         if config.GPU_COUNT > 1:
-            from mrcnn.parallel_model import ParallelModel
+            from parallel_model import ParallelModel 
             model = ParallelModel(model, config.GPU_COUNT)
-        '''
         return model
+
+    def get_anchors(self, image_shape):
+        """Returns anchor pyramid for the given image size."""
+        # Cache anchors and reuse if image shape is the same
+        if not hasattr(self, "_anchor_cache"):
+            self._anchor_cache = {}
+        if not tuple(image_shape) in self._anchor_cache:
+            # Generate Anchors
+            a = generate_pyramid_anchors(image_shape)
+            # Keep a copy of the latest anchors in pixel coordinates because
+            # it's used in inspect_model notebooks.
+            # TODO: Remove this after the notebook are refactored to not use it
+            self.anchors = a
+            # Normalize coordinates
+            self._anchor_cache[tuple(image_shape)] = UT.norm_boxes(a,image_shape)
+        return self._anchor_cache[tuple(image_shape)]
 
     def load_weights(self, filepath, by_name=False, exclude=None):
         """Modified version of the corresponding Keras function with
@@ -302,9 +331,11 @@ class MaskRCNN():
         # First, clear previously set losses to avoid duplication
         self.keras_model._losses = []
         self.keras_model._per_input_losses = {}
-        loss_names = [
-            "rpn_class_loss",  "rpn_bbox_loss"]
-            #"mrcnn_class_loss", "mrcnn_bbox_loss", "mrcnn_mask_loss"]
+        if self.train_stage == 'heads':
+            loss_names = ["rpn_class_loss",  "rpn_bbox_loss"]
+        else:
+            loss_names = ["rpn_class_loss",  "rpn_bbox_loss",\
+                "mrcnn_class_loss", "mrcnn_bbox_loss", "mrcnn_mask_loss"]
         for name in loss_names:
             layer = self.keras_model.get_layer(name)
             if layer.output in self.keras_model.losses:
@@ -412,7 +443,7 @@ class MaskRCNN():
         self.checkpoint_path = self.checkpoint_path.replace(
             "*epoch*", "{epoch:04d}")
 
-    def train(self, train_dataset, val_dataset, learning_rate, epochs, layers,patience,
+    def train(self, train_dataset, val_dataset, learning_rate, epochs,patience,
               augmentation=None, custom_callbacks=None, no_augmentation_sources=None):
         """Train the model.
         train_dataset, val_dataset: Training and validation Dataset objects.
@@ -451,15 +482,16 @@ class MaskRCNN():
         layer_regex = {
             # all layers but the backbone
             "heads": r"(res*)|(mrcnn\_.*)|(rpn\_.*)|(fpn\_.*)",
+            "4+": r"(res*)|(mrcnn\_.*)|(rpn\_.*)|(fpn\_.*)",
             # From a specific Resnet stage and up
             "3+": r"(res3.*)|(bn3.*)|(res4.*)|(bn4.*)|(res5.*)|(bn5.*)|(mrcnn\_.*)|(rpn\_.*)|(fpn\_.*)",
-            "4+": r"(res4.*)|(bn4.*)|(res5.*)|(bn5.*)|(mrcnn\_.*)|(rpn\_.*)|(fpn\_.*)",
+            #"4+": r"(res4.*)|(bn4.*)|(res5.*)|(bn5.*)|(mrcnn\_.*)|(rpn\_.*)|(fpn\_.*)",
             "5+": r"(res5.*)|(bn5.*)|(mrcnn\_.*)|(rpn\_.*)|(fpn\_.*)",
             # All layers
             "all": ".*",
         }
-        if layers in layer_regex.keys():
-            layers = layer_regex[layers]
+        assert self.train_stage in layer_regex.keys()
+        layers_re = layer_regex[self.train_stage]
         # Data generators
         train_generator = data_generator(train_dataset, shuffle=True,
                                          augmentation=augmentation,
@@ -481,7 +513,7 @@ class MaskRCNN():
         # Train
         log("\nStarting at epoch {}. LR={}\n".format(self.epoch, learning_rate))
         log("Checkpoint Path: {}".format(self.checkpoint_path))
-        self.set_trainable(layers)
+        self.set_trainable(layers_re)
         self.compile(learning_rate, self.config.LEARNING_MOMENTUM)
         # Work-around for Windows: Keras fails on Windows when using
         # multiprocessing workers. See discussion here:
@@ -502,7 +534,8 @@ class MaskRCNN():
             callbacks=callbacks,
             validation_data=val_generator,
             validation_steps=val_batch_num,
-            max_queue_size=100
+            max_queue_size=100,
+            verbose=2
             #workers=workers,
             #use_multiprocessing=True,
         )

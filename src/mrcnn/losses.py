@@ -116,18 +116,20 @@ def mrcnn_class_loss_graph(target_class_ids, pred_class_logits,
     pred_active = tf.gather(active_class_ids[0], pred_class_ids)
 
     # Loss
-    loss = K.sparse_categorical_crossentropy(target=target_class_ids,
-                                             output=pred_class_logits)
+    loss = tf.losses.sparse_softmax_cross_entropy(
+        labels=target_class_ids, logits=pred_class_logits)
+    #loss = K.sparse_categorical_crossentropy(target=target_class_ids,
+    #                                         output=pred_class_logits)
     #loss = tf.nn.sparse_softmax_cross_entropy_with_logits(
      #   labels=target_class_ids, logits=pred_class_logits)
 
     # Erase losses of predictions of classes that are not in the active
     # classes of the image.
-    loss = loss * pred_active
+    #loss = loss * pred_active
 
     # Computer loss mean. Use only predictions that contribute
     # to the loss to get a correct mean.
-    loss = tf.reduce_sum(loss) / tf.reduce_sum(pred_active)
+    #loss = K.mean(loss) #/ tf.reduce_sum(pred_active)
     return loss
 
 
@@ -202,16 +204,25 @@ def mrcnn_mask_loss_graph(target_masks, target_class_ids, pred_masks):
 
 if __name__=='__main__':
     rpn_match = np.array([[[1],[1],[1],[0],[-1]],[[1],[1],[1],[0],[-1]]],dtype=np.int32)
-    #rpn_log = np.array([[[0.1,0.9],[0.4,0.6],[0.6,0.4],[0.7,0.3],[0.2,0.8]],\
-     #                   [[0.1,0.9],[0.4,0.6],[0.6,0.4],[0.7,0.3],[0.2,0.8]]],dtype=np.float32)
-    rpn_log = np.array([[[0.1,0.9,-0.1,-0.3],[0.4,0.6,-0.1,-0.1],[0.6,0.4,0.1,0.1],[0.7,0.3,0.5,0.5],[0.2,0.8,-0.5,0.3]],\
-                        [[0.1,0.9,-0.1,-0.3],[0.4,0.6,-0.1,-0.1],[0.6,0.4,0.1,0.1],[0.7,0.3,0.5,0.5],[0.2,0.8,-0.5,0.3]]],dtype=np.float32)
+    rpn_log = np.array([[[0.1,0.9],[0.4,0.6],[0.6,0.4],[0.7,0.3],[0.2,0.8]]],dtype=np.float32)
+                   #    [[0.1,0.9],[0.4,0.6],[0.6,0.4],[0.7,0.3],[0.2,0.8]]],dtype=np.float32)
+    #rpn_log = np.array([[[0.1,0.9,-0.1,-0.3],[0.4,0.6,-0.1,-0.1],[0.6,0.4,0.1,0.1],[0.7,0.3,0.5,0.5],[0.2,0.8,-0.5,0.3]],\
+     #                   [[0.1,0.9,-0.1,-0.3],[0.4,0.6,-0.1,-0.1],[0.6,0.4,0.1,0.1],[0.7,0.3,0.5,0.5],[0.2,0.8,-0.5,0.3]]],dtype=np.float32)
     rpn_tar = np.array([[[0.3,0.8,-0.1,-0.3],[0.4,0.6,0.1,0.1],[0.6,0.4,-0.1,-0.1]],\
                         [[0.3,0.8,-0.1,-0.3],[0.4,0.6,0.1,0.1],[0.6,0.4,-0.1,-0.1]]],dtype=np.float32)
+    mark_pre = np.array([[[0.1,0.9],[0.4,0.6],[0.6,0.4],[0.7,0.3],[0.2,0.8]],\
+                        [[0.1,0.9],[0.4,0.6],[0.6,0.4],[0.7,0.3],[0.2,0.8]]],dtype=np.float32)
+    mark_tar = np.array([[[1],[1],[1],[0],[0]],[[1],[1],[1],[0],[0]]],dtype=np.int32)
+    #mark_tar = np.array([[[1],[1],[1],[0],[0]]],dtype=np.int32)
+    mark_ac = np.array([[[1],[1]],[[1],[1]]],dtype=np.int32)
+    print(mark_tar.shape)
+    print(mark_pre.shape)
     graph = tf.Graph()
     with graph.as_default():
-       ls,te = rpn_bbox_loss_graph(rpn_tar,rpn_match,rpn_log)
+       #ls,te = rpn_bbox_loss_graph(rpn_tar,rpn_match,rpn_log)
+       #ls = rpn_class_loss_graph(rpn_match,rpn_log)
+       ls = mrcnn_class_loss_graph(mark_tar,mark_pre,mark_ac)
        sess = tf.Session()
-       out = sess.run([ls,te])
+       out = sess.run([ls])
     print(out)
-    print(out[1][0])
+    #print(out[1][0])

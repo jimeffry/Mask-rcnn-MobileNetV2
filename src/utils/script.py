@@ -52,7 +52,8 @@ def mdir_fromimg(base_dir,save_dir):
         dist_dir = os.path.join(save_dir,dist_name)
         if not os.path.exists(dist_dir):
             os.makedirs(dist_dir)
-        save_name = file_splits[0] +'.jpg'
+        #save_name = file_splits[0] +'.jpg'
+        save_name = 'front.jpg'
         save_path = os.path.join(dist_dir,save_name)
         shutil.copyfile(org_path,save_path)
 

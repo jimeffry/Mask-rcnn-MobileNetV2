@@ -292,9 +292,10 @@ def Inverted_residual_block(t,chal_in,c,s,data_in,**kargs):
     rb_out = bottleneck(t*chal_in,c,data_in,dconv_stride=s,bot_name=name_b,**kargs)
     if s==1 :
         if not same_shape:
-            name_a = name+"a"
-            data_out = Conv1x1(c,data_in,conv_name=name_a,is_linear=True,**kargs)
-            out = KL.add([rb_out,data_out])
+            #name_a = name+"a"
+            #data_out = Conv1x1(c,data_in,conv_name=name_a,is_linear=True,**kargs)
+            #out = KL.add([rb_out,data_out])
+            out = rb_out
         else:
             out = KL.add([rb_out,data_in])
     else:

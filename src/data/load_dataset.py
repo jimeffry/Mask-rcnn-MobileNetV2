@@ -80,7 +80,6 @@ class Dataset(object):
     def image_reference(self, image_id):
         """Return a link to the image in its source Website or details about
         the image that help looking it up or debugging it.
-
         Override for your dataset, but pass to this function
         if you encounter images not in your dataset.
         """
@@ -88,11 +87,9 @@ class Dataset(object):
 
     def prepare(self, class_map=None):
         """Prepares the Dataset class for use.
-
         TODO: class map is not supported yet. When done, it should handle mapping
               classes from different datasets to the same class ID.
         """
-
         def clean_name(name):
             """Returns a shorter version of object names for cleaner display."""
             return ",".join(name.split(",")[:1])

@@ -131,7 +131,7 @@ def main(args):
             tmp_crop = img_crop(img,bbox)
             key_name = name_list[i]
             tmp_cnt = saveimg_dict.setdefault(key_name,0)
-            img_path = os.path.join(train_dir_dict[key_name],key_name+'_'+str(tmp_cnt)+'.jpg')
+            img_path = os.path.join(train_dir_dict[key_name],key_name+'_'+load_name+'_'+str(tmp_cnt)+'.jpg')
             saveimg_dict[key_name] = tmp_cnt+1
             cv2.imwrite(img_path,tmp_crop)
 

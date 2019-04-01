@@ -6,22 +6,16 @@
 # ----------------------------------------------------------
 
 import numpy as np
-cimport numpy as np
 
-cdef inline np.float32_t max(np.float32_t a, np.float32_t b):
-    return a if a >= b else b
 
-cdef inline np.float32_t min(np.float32_t a, np.float32_t b):
-    return a if a <= b else b
-
-def cpu_soft_nms(np.ndarray[float, ndim=2] boxes, float sigma=0.5, float Nt=0.3, float threshold=0.001, unsigned int method=0):
-    cdef unsigned int N = boxes.shape[0]
-    cdef float iw, ih, box_area
-    cdef float ua
-    cdef int pos = 0
-    cdef float maxscore = 0
-    cdef int maxpos = 0
-    cdef float x1,x2,y1,y2,tx1,tx2,ty1,ty2,ts,area,weight,ov
+def cpu_soft_nms(boxes,sigma=0.5,Nt=0.3,threshold=0.001,method=0):
+    N = boxes.shape[0]
+    #iw, ih, box_area
+    #ua
+    pos = 0
+    maxscore = 0
+    maxpos = 0
+    #x1,x2,y1,y2,tx1,tx2,ty1,ty2,ts,area,weight,ov
 
     for i in range(N):
         maxscore = boxes[i, 4]
@@ -109,7 +103,54 @@ def cpu_soft_nms(np.ndarray[float, ndim=2] boxes, float sigma=0.5, float Nt=0.3,
     keep = [i for i in range(N)]
     return keep
 
+def NMS(rectangles,threshold,type=0,sigma=0.5,Ot=0.5):
+    if len(rectangles)==0:
+        return rectangles
+    boxes = np.array(rectangles)
+    x1 = boxes[:,0]
+    y1 = boxes[:,1]
+    x2 = boxes[:,2]
+    y2 = boxes[:,3]
+    s  = boxes[:,4]
+    area = np.multiply(x2-x1+1, y2-y1+1)
+    I = np.array(s.argsort())
+    pick = []
+    #I[-1] have hightest prob score, I[0:-1]->others
+    tmp_idx = 0
+    I_pick = I
+    while len(I)>0:
+        tmp_idx +=1
+        xx1 = np.maximum(x1[I[-1]], x1[I[0:-1]]) 
+        yy1 = np.maximum(y1[I[-1]], y1[I[0:-1]])
+        xx2 = np.minimum(x2[I[-1]], x2[I[0:-1]])
+        yy2 = np.minimum(y2[I[-1]], y2[I[0:-1]])
+        w = np.maximum(0.0, xx2 - xx1 + 1)
+        h = np.maximum(0.0, yy2 - yy1 + 1)
+        inter = w * h
+        o = inter / np.minimum(area[I[-1]], area[I[0:-1]])
+        pick.append(I_pick[-tmp_idx])
+        for i in range(len(I)-1):
+            if type == 1: # linear
+                if o[i] > threshold: 
+                    weight = 1 - o[i]
+                else:
+                    weight = 1
+            elif type == 2: # gaussian
+                weight = np.exp(-(o[i] * o[i])/sigma)
+            else: # original NMS
+                if o[i] > threshold: 
+                    weight = 0
+                else:
+                    weight = 1
+            s[I[i]] = weight*s[I[i]]
+        s = s[I[:-1]]
+        I = np.array(s.argsort())
+        I = I[np.where(s_tmp>=Ot)[0]]
+        
+    result_rectangle = boxes[pick].tolist()
+    return result
 
+'''
 def cpu_nms(np.ndarray[np.float32_t, ndim=2] dets, np.float thresh):
     cdef np.ndarray[np.float32_t, ndim=1] x1 = dets[:, 0]
     cdef np.ndarray[np.float32_t, ndim=1] y1 = dets[:, 1]
@@ -162,3 +203,11 @@ def cpu_nms(np.ndarray[np.float32_t, ndim=2] dets, np.float thresh):
                 suppressed[j] = 1
 
     return keep
+'''
+
+if __name__=='__main__':
+    bbs = np.array([[10,10,20,20,0.97],[15,15,19,19,0.95],[30,30,50,50,0.90],[40,40,70,70,0.1],[12,12,22,22,0.96]])
+    keep = cpu_soft_nms(bbs,threshold=0.8, method=2)
+    print(keep)
+    print(bbs[keep])
+    print(bbs)
